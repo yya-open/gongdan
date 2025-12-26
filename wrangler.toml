@@ -1,9 +1,3 @@
 name = "ticket-shared-local"
 compatibility_date = "2025-12-26"
 pages_build_output_dir = "."
-
-
-[[d1_databases]]
-binding = "DB"
-database_name = "ticket_db"
-
