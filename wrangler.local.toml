@@ -1,12 +1,3 @@
 name = "ticket-shared-local"
 compatibility_date = "2025-12-26"
 pages_build_output_dir = "."
-[vars]
-EDIT_KEY = "huangjh"
-# 危险操作口令：用于显示/执行「一键删除」「一键清空回收站」等批量不可逆操作
-DANGER_KEY = "huangjh-danger"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "ticket_db"
-database_id = "16747bb5-0723-4be5-b11a-7ef248c3810b"
