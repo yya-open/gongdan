@@ -1,7 +1,9 @@
 name = "ticket-shared-local"
 compatibility_date = "2025-12-26"
 pages_build_output_dir = "."
-
+[vars]
+EDIT_KEY = "cimc"
+DANGER_KEY = "huangjh"
 
 [[d1_databases]]
 binding = "DB"
