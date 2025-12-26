@@ -11,7 +11,6 @@
 - POST `/api/import/preview`（安全合并导入预演：仅备份更新更晚才覆盖）
 - POST `/api/import/apply`（安全合并导入应用）
 - PUT `/api/import`（危险：覆盖云端数据，仅用于灾难恢复）
-- DELETE `/api/tickets/purge-all`（极危险：清空数据库所有数据，需要 EDIT_KEY + DANGER_KEY）
 
 ## 1. 部署到 Cloudflare Pages
 
