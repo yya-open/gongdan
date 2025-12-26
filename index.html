@@ -274,7 +274,7 @@
   z-index: 10050;
   padding: 18px;
 }
-.ticket-modal-mask.show{ display:flex; }
+.ticket-modal-mask.show{ display:flex !important; }
 .ticket-modal-panel{
   width: min(1100px, 98vw);
   max-height: 90vh;
@@ -447,10 +447,38 @@
       </div>
 
       <div class="settings-actions">
-        <button type="button" class="secondary" onclick="openKeyModal()">管理口令</button>
+        <button id="btnOpenKeyModal" type="button" class="secondary" onclick="openKeyModal()">管理口令</button>
         <button type="button" class="btn-ghost" onclick="testEditKey()">测试口令</button>
       </div>
     </div>
+
+    <div class="settings-item">
+      <div class="settings-main">
+        <div class="settings-title">危险操作口令</div>
+        <div class="settings-desc">仅用于显示/执行批量不可逆操作（回收站的一键删除/一键清空）。口令仅保存在当前浏览器。</div>
+        <div class="settings-meta">
+          状态：<span id="dangerKeyStatus" class="pill off">未验证</span>
+          <span class="settings-sep">|</span>
+          上次验证：<span id="dangerKeySetAt">-</span>
+        </div>
+      </div>
+
+      <div class="settings-actions">
+        <button id="btnOpenDangerKeyModal" type="button" class="secondary" onclick="openDangerKeyModal()">管理口令</button>
+        <button type="button" class="btn-ghost" onclick="testDangerKey()">测试口令</button>
+      </div>
+        <div class="settings-item" id="dbNukeActions" style="display:none;">
+      <div class="settings-main">
+        <div class="settings-title">数据库危险操作</div>
+        <div class="settings-desc">一键删除数据库所有数据（包含回收站）。此操作不可恢复，请谨慎。</div>
+        <div class="settings-meta">显示条件：危险口令已验证</div>
+      </div>
+
+      <div class="settings-actions">
+        <button type="button" class="btn-danger" onclick="nukeDatabaseAllData()">一键删除数据库所有数据</button>
+      </div>
+    </div>
+</div>
   </div>
 </div>
 
@@ -495,6 +523,12 @@
 <button onclick="clearFilters()">清空筛选</button>
 <button class="secondary" id="trashToggleBtn" type="button" onclick="toggleTrashView()">回收站</button>
 <span id="viewModePill" class="pill" style="margin-left:6px;">工单</span>
+</div>
+
+<!-- 回收站批量危险操作（仅危险口令验证通过时显示） -->
+<div id="trashBulkActions" class="buttons" style="margin-top:8px; display:none;">
+  <button class="btn-danger" type="button" onclick="bulkHardDeleteFilteredTrash()">一键删除（当前筛选）</button>
+  <button class="btn-danger" type="button" onclick="emptyTrash()">一键清空回收站</button>
 </div>
 </div>
 <!-- 导出 / 备份操作 -->
@@ -673,6 +707,42 @@
   </div>
 </div>
 
+<!-- 危险口令设置（仅用于批量不可逆操作） -->
+<div class="ticket-modal-mask" id="dangerKeyModal" onclick="onDangerKeyModalMaskClick(event)">
+  <div class="ticket-modal-panel" role="dialog" aria-modal="true" aria-labelledby="dangerKeyModalTitle" style="width:min(640px,96vw);">
+    <div class="ticket-modal-header">
+      <div style="font-weight:700;font-size:18px;" id="dangerKeyModalTitle">危险操作口令</div>
+      <button type="button" class="ticket-modal-close" onclick="closeDangerKeyModal()">×</button>
+    </div>
+
+    <div class="key-form">
+      <div class="key-row">
+        <label for="dangerKeyInput"><b>危险口令</b></label>
+        <input id="dangerKeyInput" class="key-input" type="password" autocomplete="off" placeholder="输入危险口令（仅用于回收站批量操作）" />
+      </div>
+
+      <div class="key-row">
+        <label><input id="dangerKeyShow" type="checkbox" onchange="toggleDangerKeyVisibility()" /> 显示口令</label>
+        <span id="dangerKeyStatus2" class="pill off">未验证</span>
+      </div>
+
+      <div class="key-help">
+        <div>• 上次验证：<b><span id="dangerKeySetAt2">-</span></b></div>
+        <div>• 口令仅保存在<b>当前浏览器</b>的 localStorage，不会上传到云端。</div>
+        <div>• 该口令只用于显示/执行回收站批量不可逆操作（如：一键删除/一键清空）。</div>
+        <div>• 如果口令输入错误，请重新设置并测试。</div>
+      </div>
+
+      <div class="key-actions">
+        <button type="button" class="btn-ghost" onclick="closeDangerKeyModal()">关闭</button>
+        <button type="button" class="btn-danger" onclick="clearDangerKeyFromUI()">清除</button>
+        <button type="button" class="btn-ghost" onclick="testDangerKey()">测试</button>
+        <button type="button" class="primary" onclick="saveDangerKeyFromUI()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </div>
 <script>
     let records = [];
@@ -711,6 +781,7 @@
         pill.classList.remove("on", "off");
         pill.classList.add(viewMode === "trash" ? "off" : "on");
       }
+      try { updateTrashBulkActionsVisibility(); } catch (e) {}
     }
     async function toggleTrashView() {
       viewMode = viewMode === "trash" ? "active" : "trash";
@@ -786,8 +857,18 @@
 
     function openKeyModal() {
       const modal = document.getElementById("keyModal");
-      if (!modal) return;
+      if (!modal) {
+        const v = prompt("请输入写入口令");
+        if (v != null) {
+          localStorage.setItem("ticket_edit_key", v.trim());
+        }
+        return;
+      }
+      // 兼容：如果曾被设置过 inline display:none（或浏览器/扩展注入样式），确保可见
       modal.classList.add("show");
+      modal.style.display = "flex";
+      modal.style.visibility = "visible";
+      modal.style.pointerEvents = "auto";
       const input = document.getElementById("editKeyInput");
       if (input) input.value = getEditKey() || "";
       const show = document.getElementById("editKeyShow");
@@ -801,6 +882,10 @@
       const modal = document.getElementById("keyModal");
       if (!modal) return;
       modal.classList.remove("show");
+      // 还原 inline 覆盖，交还给 CSS 控制
+      modal.style.display = "";
+      modal.style.visibility = "";
+      modal.style.pointerEvents = "";
       // 如果有等待 ensureEditKey 的调用，关闭视为放弃
       resolveEditKeyWaiters(getEditKey() || "");
     }
@@ -885,6 +970,364 @@
         }
       } catch (e) {
         if (typeof showToast === "function") showToast("无法连接服务端进行测试。", "error");
+      }
+    }
+
+    // ===== 危险口令（仅保护批量不可逆操作：回收站一键删除/一键清空） =====
+    const DANGER_KEY_STORAGE = "ticket_danger_key";
+    const DANGER_KEY_OK_STORAGE = "ticket_danger_key_ok"; // '1' | '0'
+    const DANGER_KEY_SET_AT_STORAGE = "ticket_danger_key_set_at";
+
+    let __dangerKeyWaiters = [];
+
+    function getDangerKey() {
+      try { return localStorage.getItem(DANGER_KEY_STORAGE) || ""; } catch { return ""; }
+    }
+    function setDangerKey(key) {
+      try { localStorage.setItem(DANGER_KEY_STORAGE, String(key || "")); } catch {}
+    }
+    function clearDangerKey() {
+      try { localStorage.removeItem(DANGER_KEY_STORAGE); } catch {}
+    }
+    function isDangerKeyOk() {
+      try {
+        const ok = (localStorage.getItem(DANGER_KEY_OK_STORAGE) || "") === "1";
+        return ok && !!getDangerKey();
+      } catch {
+        return false;
+      }
+    }
+    function setDangerKeyOk(ok) {
+      try { localStorage.setItem(DANGER_KEY_OK_STORAGE, ok ? "1" : "0"); } catch {}
+    }
+    function getDangerKeySetAt() {
+      try { return localStorage.getItem(DANGER_KEY_SET_AT_STORAGE) || ""; } catch { return ""; }
+    }
+    function setDangerKeySetAtNow() {
+      try { localStorage.setItem(DANGER_KEY_SET_AT_STORAGE, new Date().toISOString()); } catch {}
+    }
+    function clearDangerKeySetAt() {
+      try { localStorage.removeItem(DANGER_KEY_SET_AT_STORAGE); } catch {}
+    }
+
+    function resolveDangerKeyWaiters(value) {
+      try {
+        __dangerKeyWaiters.forEach((r) => r(value));
+      } finally {
+        __dangerKeyWaiters = [];
+      }
+    }
+
+    function updateDangerKeyStatus() {
+      const ok = isDangerKeyOk();
+      const setAt = formatISOToLocal(getDangerKeySetAt());
+
+      const applyPill = (el) => {
+        if (!el) return;
+        el.classList.remove("on", "off");
+        el.classList.add(ok ? "on" : "off");
+        el.textContent = ok ? "已验证" : "未验证";
+      };
+
+      applyPill(document.getElementById("dangerKeyStatus"));
+      applyPill(document.getElementById("dangerKeyStatus2"));
+
+      const el1 = document.getElementById("dangerKeySetAt");
+      const el2 = document.getElementById("dangerKeySetAt2");
+      if (el1) el1.textContent = ok ? setAt : "-";
+      if (el2) el2.textContent = ok ? setAt : "-";
+
+      updateTrashBulkActionsVisibility();
+      updateDbNukeActionsVisibility();
+    }
+
+    function openDangerKeyModal() {
+      const modal = document.getElementById("dangerKeyModal");
+      if (!modal) {
+        const v = prompt("请输入危险操作口令");
+        if (v != null) {
+          localStorage.setItem("ticket_danger_key", v.trim());
+        }
+        return;
+      }
+      // 兼容：如果曾被设置过 inline display:none（或浏览器/扩展注入样式），确保可见
+      modal.classList.add("show");
+      modal.style.display = "flex";
+      modal.style.visibility = "visible";
+      modal.style.pointerEvents = "auto";
+      const input = document.getElementById("dangerKeyInput");
+      if (input) input.value = getDangerKey() || "";
+      const show = document.getElementById("dangerKeyShow");
+      if (show) show.checked = false;
+      if (input) input.type = "password";
+      updateDangerKeyStatus();
+      if (input) input.focus();
+    }
+
+    function closeDangerKeyModal() {
+      const modal = document.getElementById("dangerKeyModal");
+      if (!modal) return;
+      modal.classList.remove("show");
+      // 还原 inline 覆盖，交还给 CSS 控制
+      modal.style.display = "";
+      modal.style.visibility = "";
+      modal.style.pointerEvents = "";
+      resolveDangerKeyWaiters(getDangerKey() || "");
+    }
+
+    function onDangerKeyModalMaskClick(e) {
+      if (e.target && e.target.id === "dangerKeyModal") closeDangerKeyModal();
+    }
+
+    function toggleDangerKeyVisibility() {
+      const input = document.getElementById("dangerKeyInput");
+      const show = document.getElementById("dangerKeyShow");
+      if (!input || !show) return;
+      input.type = show.checked ? "text" : "password";
+    }
+
+    async function saveDangerKeyFromUI() {
+      const input = document.getElementById("dangerKeyInput");
+      const key = (input ? input.value : "").trim();
+      if (!key) {
+        clearDangerKey();
+        setDangerKeyOk(false);
+        clearDangerKeySetAt();
+        updateDangerKeyStatus();
+        resolveDangerKeyWaiters("");
+        if (typeof showToast === "function") showToast("已清除危险口令。", "success");
+        return;
+      }
+      setDangerKey(key);
+      // 保存后立即测试：测试通过才算“已验证”
+      await testDangerKey({ silentOpen: true });
+      resolveDangerKeyWaiters(key);
+    }
+
+    function clearDangerKeyFromUI() {
+      clearDangerKey();
+      setDangerKeyOk(false);
+      clearDangerKeySetAt();
+      const input = document.getElementById("dangerKeyInput");
+      if (input) input.value = "";
+      updateDangerKeyStatus();
+      resolveDangerKeyWaiters("");
+      if (typeof showToast === "function") showToast("已清除危险口令。", "success");
+    }
+
+    async function ensureDangerKeyOk() {
+      if (isDangerKeyOk()) return getDangerKey();
+      // 未验证则弹出设置窗口，并等待用户保存/关闭
+      openDangerKeyModal();
+      if (typeof showToast === "function") showToast("请先设置并测试危险口令后再执行批量操作。", "warning");
+      return await new Promise((resolve) => {
+        __dangerKeyWaiters.push(resolve);
+      });
+    }
+
+    async function testDangerKey({ silentOpen = false } = {}) {
+      const key = getDangerKey();
+      if (!key) {
+        setDangerKeyOk(false);
+        clearDangerKeySetAt();
+        updateDangerKeyStatus();
+        if (!silentOpen) {
+          openDangerKeyModal();
+          if (typeof showToast === "function") showToast("请先设置危险口令，再进行测试。", "warning");
+        }
+        return;
+      }
+      try {
+        const res = await fetch("/api/danger-test", {
+          method: "GET",
+          headers: { "X-DANGER-KEY": key },
+          cache: "no-store",
+        });
+        if (res.ok) {
+          setDangerKeyOk(true);
+          setDangerKeySetAtNow();
+          updateDangerKeyStatus();
+          if (typeof showToast === "function") showToast("危险口令验证通过 ✅", "success");
+        } else if (res.status === 401) {
+          setDangerKeyOk(false);
+          clearDangerKey();
+          clearDangerKeySetAt();
+          updateDangerKeyStatus();
+          if (typeof showToast === "function") showToast("危险口令错误（401），请重新设置。", "error");
+          if (!silentOpen) openDangerKeyModal();
+        } else if (res.status === 500) {
+          setDangerKeyOk(false);
+          updateDangerKeyStatus();
+          if (typeof showToast === "function") showToast("服务端未配置 DANGER_KEY（500）。", "error");
+        } else {
+          setDangerKeyOk(false);
+          updateDangerKeyStatus();
+          if (typeof showToast === "function") showToast(`危险口令测试失败：${res.status}`, "error");
+        }
+      } catch (e) {
+        setDangerKeyOk(false);
+        updateDangerKeyStatus();
+        if (typeof showToast === "function") showToast("无法连接服务端进行危险口令测试。", "error");
+      }
+    }
+
+        function updateDbNukeActionsVisibility() {
+      const el = document.getElementById("dbNukeActions");
+      if (!el) return;
+      const show = isDangerKeyOk();
+      el.style.display = show ? "" : "none";
+    }
+
+function updateTrashBulkActionsVisibility() {
+      const el = document.getElementById("trashBulkActions");
+      if (!el) return;
+      const show = (viewMode === "trash") && isDangerKeyOk();
+      el.style.display = show ? "" : "none";
+    }
+
+    async function dangerAuthedFetch(url, options = {}) {
+      const method = String(options.method || "GET").toUpperCase();
+      const needAuth = ["POST", "PUT", "DELETE", "PATCH"].includes(method);
+      if (!needAuth) return fetch(url, options);
+
+      const editKey = await ensureEditKey();
+      const dangerKey = await ensureDangerKeyOk();
+
+      const headers = new Headers(options.headers || {});
+      if (editKey) headers.set("X-EDIT-KEY", editKey);
+      if (dangerKey) headers.set("X-DANGER-KEY", dangerKey);
+
+      const res = await fetch(url, { ...options, headers });
+
+      if (res.status === 401) {
+        // 这里可能是 EDIT_KEY 或 DANGER_KEY 不对。
+        // EDIT_KEY 的 401 在 authedFetch 里会清除；这里我们也清除危险口令的验证状态。
+        setDangerKeyOk(false);
+        clearDangerKey();
+        clearDangerKeySetAt();
+        updateDangerKeyStatus();
+        if (typeof showToast === "function") showToast("危险口令错误，请重新输入。", "error");
+        openDangerKeyModal();
+      } else if (res.status === 500) {
+        try {
+          const t = await res.clone().text();
+          if (/DANGER_KEY|misconfigured/i.test(t)) {
+            if (typeof showToast === "function") showToast("服务端未配置 DANGER_KEY。", "error");
+          }
+        } catch {}
+      }
+      return res;
+    }
+
+    async function bulkHardDeleteFilteredTrash() {
+      if (viewMode !== "trash") {
+        if (typeof showToast === "function") showToast("请先切换到回收站视图。", "warning");
+        return;
+      }
+      if (!isDangerKeyOk()) {
+        openDangerKeyModal();
+        if (typeof showToast === "function") showToast("请先验证危险口令后再执行。", "warning");
+        return;
+      }
+
+      const filtered = getFilteredRecords();
+      const ids = filtered.map((r) => r.id).filter((v) => Number.isFinite(Number(v)));
+      if (!ids.length) {
+        if (typeof showToast === "function") showToast("当前筛选下没有回收站记录可删除。", "warning");
+        return;
+      }
+
+      const ok = await showConfirm({
+        title: "一键彻底删除（当前筛选）",
+        message: `将永久删除当前筛选下的 ${ids.length} 条回收站记录。\n\n此操作不可恢复。`,
+        confirmText: "确认删除",
+        cancelText: "取消",
+        danger: true,
+      });
+      if (!ok) return;
+
+      try {
+        const res = await dangerAuthedFetch("/api/tickets/trash/bulk-hard", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ids }),
+        });
+        if (!res.ok) throw new Error(`bulk hard delete failed: ${res.status}`);
+        const data = await res.json().catch(() => ({}));
+        await reloadAndRender();
+        if (typeof showToast === "function") showToast(`已彻底删除 ${Number(data?.deleted ?? 0)} 条记录。`, "success");
+      } catch (e) {
+        if (isNoKeyError(e)) return;
+        console.error(e);
+        if (typeof showToast === "function") showToast("一键删除失败：请检查网络或后端是否正常。", "error");
+      }
+    }
+
+    async function emptyTrash() {
+      if (viewMode !== "trash") {
+        if (typeof showToast === "function") showToast("请先切换到回收站视图。", "warning");
+        return;
+      }
+      if (!isDangerKeyOk()) {
+        openDangerKeyModal();
+        if (typeof showToast === "function") showToast("请先验证危险口令后再执行。", "warning");
+        return;
+      }
+
+      const ok = await showConfirm({
+        title: "一键清空回收站",
+        message: "将永久删除回收站内的所有记录。\n\n此操作不可恢复。",
+        confirmText: "确认清空",
+        cancelText: "取消",
+        danger: true,
+      });
+      if (!ok) return;
+
+      try {
+        const res = await dangerAuthedFetch("/api/tickets/trash/empty", { method: "DELETE" });
+        if (!res.ok) throw new Error(`empty trash failed: ${res.status}`);
+        const data = await res.json().catch(() => ({}));
+        await reloadAndRender();
+        if (typeof showToast === "function") showToast(`回收站已清空（删除 ${Number(data?.deleted ?? 0)} 条）。`, "success");
+      } catch (e) {
+        if (isNoKeyError(e)) return;
+        console.error(e);
+        if (typeof showToast === "function") showToast("清空回收站失败：请检查网络或后端是否正常。", "error");
+      }
+    }
+
+    async function nukeDatabaseAllData() {
+      if (!isDangerKeyOk()) {
+        openDangerKeyModal();
+        if (typeof showToast === "function") showToast("请先验证危险口令后再执行。", "warning");
+        return;
+      }
+
+      const ok1 = await showConfirm({
+        title: "一键删除数据库所有数据",
+        message: "将永久删除数据库内所有工单（包含回收站）。\n\n此操作不可恢复。",
+        confirmText: "继续",
+        cancelText: "取消",
+        danger: true,
+      });
+      if (!ok1) return;
+
+      const phrase = prompt("为防误操作，请输入：DELETE-ALL");
+      if (String(phrase || "").trim() !== "DELETE-ALL") {
+        if (typeof showToast === "function") showToast("确认短语不匹配，已取消。", "warning");
+        return;
+      }
+
+      try {
+        const res = await dangerAuthedFetch("/api/tickets/purge-all", { method: "DELETE" });
+        if (!res.ok) throw new Error(`purge-all failed: ${res.status}`);
+        const data = await res.json().catch(() => ({}));
+        await reloadAndRender();
+        if (typeof showToast === "function") showToast(`数据库已清空（删除 ${Number(data?.deleted ?? 0)} 条）。`, "success");
+      } catch (e) {
+        if (isNoKeyError(e)) return;
+        console.error(e);
+        if (typeof showToast === "function") showToast("清空数据库失败：请检查网络或后端是否正常。", "error");
       }
     }
 
@@ -975,7 +1418,11 @@
     function openTicketModal(reset = true) {
       const mask = document.getElementById("ticketModal");
       if (!mask) return;
+      // 兼容：确保遮罩可见（避免 inline display:none 覆盖）
       mask.classList.add("show");
+      mask.style.display = "flex";
+      mask.style.visibility = "visible";
+      mask.style.pointerEvents = "auto";
       if (reset) {
         resetForm(true);
       }
@@ -990,6 +1437,9 @@
       const mask = document.getElementById("ticketModal");
       if (!mask) return;
       mask.classList.remove("show");
+      mask.style.display = "";
+      mask.style.visibility = "";
+      mask.style.pointerEvents = "";
     }
 
     function onTicketModalMaskClick(e) {
@@ -2402,6 +2852,7 @@ function loadBackup(event) {
     
 (async function init() {
   try { updateEditKeyStatus(); } catch (e) {}
+  try { updateDangerKeyStatus(); } catch (e) {}
 
   // 先恢复月份视图（只影响筛选/显示，不影响数据源）
   loadViewState();
@@ -2422,7 +2873,39 @@ function loadBackup(event) {
     showToast("云端加载失败，已使用本地缓存（仅本浏览器）。", "warning");
   }
 })();
-  </script>
+  
+    // ===== 确保 inline onclick 在任何运行模式下都能找到函数（避免按钮无响应） =====
+    Object.assign(window, {
+      archiveByMonthJSON,
+      backupData,
+      bulkHardDeleteFilteredTrash,
+      clearDangerKeyFromUI,
+      clearEditKeyFromUI,
+      clearFilters,
+      closeDangerKeyModal,
+      closeKeyModal,
+      closeTicketModal,
+      emptyTrash,
+      exportExcelByMonth,
+      exportExcelCurrent,
+      exportYearZip,
+      ...(typeof manualBackup !== "undefined" ? { manualBackup } : {}),
+      nukeDatabaseAllData,
+      onDangerKeyModalMaskClick,
+      onKeyModalMaskClick,
+      onTicketModalMaskClick,
+      openDangerKeyModal,
+      openKeyModal,
+      openTicketModal,
+      renderTable,
+      resetForm,
+      saveDangerKeyFromUI,
+      saveEditKeyFromUI,
+      testDangerKey,
+      testEditKey,
+      toggleTrashView
+    });
+</script>
 <!-- Toast 提示 -->
 <div aria-atomic="true" aria-live="polite" class="toast-container" id="toastContainer"></div>
 <!-- 通用弹窗（替代 alert/confirm） -->
@@ -2466,6 +2949,41 @@ function loadBackup(event) {
       showToast("备份失败！", "error");
     }
   }
+
+    // --- v6: ensure modal buttons always work (even if inline onclick is blocked) ---
+    window.openKeyModal = openKeyModal;
+    window.closeKeyModal = closeKeyModal;
+    window.openDangerKeyModal = openDangerKeyModal;
+    window.closeDangerKeyModal = closeDangerKeyModal;
+
+    function bindKeyButtons(){
+      const b1 = document.getElementById("btnOpenKeyModal");
+      if (b1 && !b1.__bound) {
+        b1.__bound = true;
+        b1.addEventListener("click", (e) => { e.preventDefault(); openKeyModal(); });
+      }
+      const b2 = document.getElementById("btnOpenDangerKeyModal");
+      if (b2 && !b2.__bound) {
+        b2.__bound = true;
+        b2.addEventListener("click", (e) => { e.preventDefault(); openDangerKeyModal(); });
+      }
+    }
+    // 兼容：如果脚本在 DOMContentLoaded 之后执行（例如某些缓存/注入场景），也能立即绑定
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", bindKeyButtons);
+    } else {
+      bindKeyButtons();
+    }
+
+    // 再兜底：事件委托，防止按钮被重新渲染/替换导致监听丢失
+    document.addEventListener("click", (e) => {
+      const t = e.target && e.target.closest ? e.target.closest("#btnOpenKeyModal, #btnOpenDangerKeyModal") : null;
+      if (!t) return;
+      e.preventDefault();
+      if (t.id === "btnOpenKeyModal") openKeyModal();
+      if (t.id === "btnOpenDangerKeyModal") openDangerKeyModal();
+    }, true);
+
 </script>
 </body>
 </html>
